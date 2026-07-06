@@ -2,20 +2,23 @@ name: Publish CLI to NPM (Release)
 on:
   release:
     types: [published]
+env:
+  # NOTE: Stick to this node version because of the bug https://github.com/nodejs/node/issues/62425
+  NODE_VERSION: 22.22.1
+permissions:
+  id-token: write # Required for OIDC authentication
+  contents: read
 jobs:
   publish:
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        node-version: [20]
     steps:
       - uses: actions/checkout@v4
-        with:
-          token: ${{ secrets.PACKAGE_SECRET }}
-      - name: Use Node.js ${{ matrix.node-version }}
+      - name: Use Node.js ${{ env.NODE_VERSION }}
         uses: actions/setup-node@v4
         with:
-          node-version: ${{ matrix.node-version }}
+          node-version: ${{ env.NODE_VERSION }}
+      - name: Update to latest npm version
+        run: npm i -g npm@11.13.0
       - name: Check version correctness
         env:
           GITHUB_REF: ${{ github.ref }}
@@ -32,16 +35,12 @@ jobs:
               exit 1
           fi
       - name: Install dependencies
-        run: yarn
+        run: yarn install --frozen-lockfile
       - name: Build
-        run: yarn workspace @chili-publish/connector-cli run build
-      - name: Use Node.js ${{ matrix.node-version }}
-        uses: actions/setup-node@v4
-        with:
-          node-version: ${{ matrix.node-version }}
-          registry-url: 'https://registry.npmjs.org'
-          scope: '@chili-publish'
+        run: yarn run build-cli
+      - name: Configure npm registry for scoped package
+        run: |
+          npm config set @chili-publish:registry https://registry.npmjs.org/
       - name: Publish
-        run: yarn publish src/connector-cli --access=public
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_AUTH_TOKEN }}
+        working-directory: src/connector-cli
+        run: npm publish --access=public --tag=latest
